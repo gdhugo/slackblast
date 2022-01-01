@@ -705,6 +705,99 @@ def make_body(date, ao, q, pax, fngs, count, moleskine):
         "\n" + moleskine
 
 
+@slack_app.view("preblast-id")
+async def view_preblast_submission(ack, body, logger, client):
+    await ack()
+    result = body["view"]["state"]["values"]
+    title = result["title"]["title"]["value"]
+    date = result["date"]["datepicker-action"]["selected_date"]
+    the_time = result["time"]["time-action"]["value"]
+    the_ao = result["the_ao"]["channels_select-action"]["selected_channel"]
+    the_q = result["the_q"]["users_select-action"]["selected_user"]
+    the_why = result["why"]["why-action"]["value"]
+    coupon = result["coupon"]["coupon-action"]["value"]
+    fngs = result["fngs"]["fng-action"]["value"]
+
+    moleskine = result["moleskine"]["plain_text_input-action"]["value"]
+    destination = result["destination"]["destination-action"]["selected_option"]["value"]
+    email_to = safeget(result, "email", "email-action", "value")
+    the_date = result["date"]["datepicker-action"]["selected_date"]
+
+    logger.info(result)
+
+    chan = destination
+    if chan == 'THE_AO':
+        chan = the_ao
+
+    logger.info('Channel to post to will be {} because the selected destination value was {} while the selected AO in the modal was {}'.format(
+        chan, destination, the_ao))
+
+    ao_name = await get_channel_name(the_ao, logger, client)
+    q_name = (await get_user_names([the_q], logger, client) or [''])[0]
+
+    msg = ""
+    try:
+        # formatting a message
+        # todo: change to use json object
+        header_msg = f"*Preblast*: "
+        title_msg = f"*" + title + "*"
+        date_msg = f"*Date*: " + the_date
+        time_msg = f"*Time*: " + the_time
+        ao_msg = f"*Where*: <#" + the_ao + ">"
+        q_msg = f"*Q*: <@" + the_q + ">"
+        why_msg = f"*Why*: " + the_why
+        coupon_msg = f"*Coupon*: " + coupon
+        fngs_msg = f"*FNGs*: " + fngs
+        moleskine_msg = moleskine
+
+        # Message the user via the app/bot name
+        if config('POST_TO_CHANNEL', cast=bool):
+            body = make_preblast_body(date_msg, time_msg, ao_msg, q_msg, why_msg, coupon_msg,
+                             fngs_msg, moleskine_msg)
+            msg = header_msg + "\n" + title_msg + "\n" + body
+            await client.chat_postMessage(channel=chan, text=msg)
+            logger.info('\nMessage posted to Slack! \n{}'.format(msg))
+    except Exception as slack_bolt_err:
+        logger.error('Error with posting Slack message with chat_postMessage: {}'.format(
+            slack_bolt_err))
+        # Try again and bomb out without attempting to send email
+        await client.chat_postMessage(channel=chan, text='There was an error with your submission: {}'.format(slack_bolt_err))
+    try:
+        if email_to and email_to != OPTIONAL_INPUT_VALUE:
+            subject = title
+
+            date_msg = f"DATE: " + the_date
+            time_msg = f"TIME: " + the_time
+            ao_msg = f"AO: " + (ao_name or '').replace('the', '').title()
+            q_msg = f"Q: " + q_name
+            why_msg = f"Why: " + pax_names
+            coupon_msg = f"Coupon: " + coupon
+            fngs_msg = f"FNGs: " + fngs
+            moleskine_msg = moleskine
+
+            body_email = make_preblast_body(date_msg, time_msg, ao_msg, q_msg, why_msg, coupon_msg,
+                             fngs_msg, moleskine_msg)
+            sendmail.send(subject=subject, recipient=email_to, body=body_email)
+
+            logger.info('\nEmail Sent! \n{}'.format(body_email))
+    except UndefinedValueError as email_not_configured_error:
+        logger.info('Skipping sending email since no EMAIL_USER or EMAIL_PWD found. {}'.format(
+            email_not_configured_error))
+    except Exception as sendmail_err:
+        logger.error('Error with sendmail: {}'.format(sendmail_err))
+
+
+def make_preblast_body(date, time, ao, q, why, coupon, fngs, moleskine):
+    return date + \
+        "\n" + time + \
+        "\n" + ao + \
+        "\n" + q + \
+        "\n" + why + \
+        "\n" + coupon + \
+        "\n" + fngs + \
+        "\n" + moleskine
+
+
 # @slack_app.options("es_categories")
 # async def show_categories(ack, body, logger):
 #     await ack()
