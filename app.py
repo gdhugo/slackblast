@@ -113,6 +113,18 @@ async def get_user_names(array_of_user_ids, logger, client):
     return names
 
 
+@slack_app.command("/testblast")
+async def command(ack, body, respond, client, logger):
+    # simple test message back to channel
+    await ack()
+    user_id = body.get("user_id")
+
+    is_direct_message = body.get("channel_name") == 'directmessage'
+    current_channel_id = user_id if is_direct_message else body.get(
+        "channel_id")
+    await client.chat_postMessage(channel=current_channel_id, text='Hey there')
+
+
 @slack_app.command("/slackblast")
 @slack_app.command("/backblast")
 @slack_app.command("/preblast")
